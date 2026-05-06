@@ -1,0 +1,8 @@
+prestop_node:
+  ros__parameters:
+    wait_duration: 3.0
+    clear_reset_duration: 1.0
+    cmd_timeout: 0.5
+    publish_rate: 20.0
+    # Omit target_polygons to stop on any CollisionDetectorState detection.
+    # To limit triggers, set a string array such as: ["front_stop", "front_slow"]
