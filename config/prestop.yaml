@@ -4,5 +4,8 @@ prestop_node:
     clear_reset_duration: 1.0
     cmd_timeout: 0.5
     publish_rate: 20.0
+    slowdown_enabled: true
+    slowdown_ratio: 0.3
     # Omit target_polygons to stop on any CollisionDetectorState detection.
     # To limit triggers, set a string array such as: ["front_stop", "front_slow"]
+    # Omit slowdown_polygons to reuse target_polygons for slowdown.

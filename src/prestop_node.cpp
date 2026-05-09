@@ -16,11 +16,22 @@ PrestopNode::PrestopNode()
   clear_reset_duration_ = declare_parameter<double>("clear_reset_duration", 1.0);
   cmd_timeout_ = declare_parameter<double>("cmd_timeout", 0.5);
   publish_rate_ = declare_parameter<double>("publish_rate", 20.0);
+  slowdown_enabled_ = declare_parameter<bool>("slowdown_enabled", true);
+  slowdown_ratio_ = declare_parameter<double>("slowdown_ratio", 0.3);
+  slowdown_ratio_ = std::clamp(slowdown_ratio_, 0.0, 1.0);
 
   const std::vector<std::string> default_target_polygons;
   const auto target_polygons =
     declare_parameter<std::vector<std::string>>("target_polygons", default_target_polygons);
   target_polygons_.insert(target_polygons.begin(), target_polygons.end());
+
+  const std::vector<std::string> default_slowdown_polygons;
+  const auto slowdown_polygons =
+    declare_parameter<std::vector<std::string>>("slowdown_polygons", default_slowdown_polygons);
+  slowdown_polygons_.insert(slowdown_polygons.begin(), slowdown_polygons.end());
+  if (slowdown_polygons_.empty()) {
+    slowdown_polygons_ = target_polygons_;
+  }
 
   state_enter_time_ = now();
 
@@ -53,6 +64,7 @@ void PrestopNode::collisionStateCallback(
   const nav2_msgs::msg::CollisionDetectorState::SharedPtr msg)
 {
   obstacle_detected_ = selectedDetectionPresent(*msg);
+  slowdown_detected_ = slowdown_enabled_ && detectionPresent(*msg, slowdown_polygons_);
 }
 
 void PrestopNode::cmdVelRawCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -73,12 +85,19 @@ void PrestopNode::timerCallback()
 bool PrestopNode::selectedDetectionPresent(
   const nav2_msgs::msg::CollisionDetectorState & msg) const
 {
+  return detectionPresent(msg, target_polygons_);
+}
+
+bool PrestopNode::detectionPresent(
+  const nav2_msgs::msg::CollisionDetectorState & msg,
+  const std::set<std::string> & polygon_names) const
+{
   const size_t count = std::min(msg.polygons.size(), msg.detections.size());
   for (size_t i = 0; i < count; ++i) {
     if (!msg.detections[i]) {
       continue;
     }
-    if (target_polygons_.empty() || target_polygons_.count(msg.polygons[i]) > 0) {
+    if (polygon_names.empty() || polygon_names.count(msg.polygons[i]) > 0) {
       return true;
     }
   }
@@ -128,6 +147,11 @@ void PrestopNode::publishCmdVel(const rclcpp::Time & current_time)
   if (has_cmd_vel_raw_ && elapsedSince(last_cmd_vel_raw_time_, current_time) <= cmd_timeout_) {
     cmd = last_cmd_vel_raw_;
   }
+
+  if (slowdown_detected_) {
+    scaleTwist(cmd, slowdown_ratio_);
+  }
+
   cmd_vel_pub_->publish(cmd);
 }
 
@@ -154,6 +178,16 @@ void PrestopNode::setState(
 
   state_ = new_state;
   state_enter_time_ = current_time;
+}
+
+void PrestopNode::scaleTwist(geometry_msgs::msg::Twist & twist, const double ratio)
+{
+  twist.linear.x *= ratio;
+  twist.linear.y *= ratio;
+  twist.linear.z *= ratio;
+  twist.angular.x *= ratio;
+  twist.angular.y *= ratio;
+  twist.angular.z *= ratio;
 }
 
 double PrestopNode::elapsedSince(

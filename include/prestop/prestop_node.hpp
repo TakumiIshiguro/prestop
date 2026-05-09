@@ -31,11 +31,15 @@ private:
   void timerCallback();
 
   bool selectedDetectionPresent(const nav2_msgs::msg::CollisionDetectorState & msg) const;
+  bool detectionPresent(
+    const nav2_msgs::msg::CollisionDetectorState & msg,
+    const std::set<std::string> & polygon_names) const;
   void updateState(const rclcpp::Time & current_time);
   void publishCmdVel(const rclcpp::Time & current_time);
   void publishState();
   void setState(GateState new_state, const rclcpp::Time & current_time);
 
+  static void scaleTwist(geometry_msgs::msg::Twist & twist, double ratio);
   static double elapsedSince(const rclcpp::Time & start_time, const rclcpp::Time & current_time);
   static std::string stateToString(GateState state);
 
@@ -43,7 +47,10 @@ private:
   double clear_reset_duration_{1.0};
   double cmd_timeout_{0.5};
   double publish_rate_{20.0};
+  double slowdown_ratio_{0.3};
+  bool slowdown_enabled_{true};
   std::set<std::string> target_polygons_;
+  std::set<std::string> slowdown_polygons_;
 
   GateState state_{GateState::NORMAL};
   rclcpp::Time state_enter_time_;
@@ -53,6 +60,7 @@ private:
   geometry_msgs::msg::Twist last_cmd_vel_raw_;
   bool has_cmd_vel_raw_{false};
   bool obstacle_detected_{false};
+  bool slowdown_detected_{false};
   bool has_clear_since_{false};
 
   rclcpp::Subscription<nav2_msgs::msg::CollisionDetectorState>::SharedPtr collision_state_sub_;
