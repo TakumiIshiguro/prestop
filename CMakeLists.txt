@@ -7,9 +7,8 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(nav2_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(prestop_node src/prestop_node.cpp)
 target_include_directories(prestop_node PUBLIC
@@ -20,9 +19,8 @@ target_compile_features(prestop_node PUBLIC cxx_std_17)
 ament_target_dependencies(
   prestop_node
   geometry_msgs
-  nav2_msgs
   rclcpp
-  std_msgs
+  sensor_msgs
 )
 
 install(TARGETS

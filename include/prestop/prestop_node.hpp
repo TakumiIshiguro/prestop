@@ -1,23 +1,27 @@
 #ifndef PRESTOP__PRESTOP_NODE_HPP_
 #define PRESTOP__PRESTOP_NODE_HPP_
 
-#include <set>
 #include <string>
 #include <vector>
 
+#include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
-#include "nav2_msgs/msg/collision_detector_state.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace prestop
 {
 
-enum class GateState
+struct Point2D
 {
-  NORMAL,
-  STOPPED_WAITING,
-  PASS_THROUGH_AFTER_WAIT
+  double x{0.0};
+  double y{0.0};
+};
+
+enum class FilterState
+{
+  CLEAR,
+  STOP
 };
 
 class PrestopNode : public rclcpp::Node
@@ -26,48 +30,43 @@ public:
   PrestopNode();
 
 private:
-  void collisionStateCallback(const nav2_msgs::msg::CollisionDetectorState::SharedPtr msg);
-  void cmdVelRawCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
-  void timerCallback();
+  void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
 
-  bool selectedDetectionPresent(const nav2_msgs::msg::CollisionDetectorState & msg) const;
-  bool detectionPresent(
-    const nav2_msgs::msg::CollisionDetectorState & msg,
-    const std::set<std::string> & polygon_names) const;
-  void updateState(const rclcpp::Time & current_time);
-  void publishCmdVel(const rclcpp::Time & current_time);
-  void publishState();
-  void setState(GateState new_state, const rclcpp::Time & current_time);
+  bool scanHasObstacleInStopZone(const sensor_msgs::msg::LaserScan & scan) const;
+  bool pointInPolygon(const Point2D & point) const;
+  sensor_msgs::msg::LaserScan makeEmptyScan(const sensor_msgs::msg::LaserScan & scan) const;
+  void publishZeroCmdVel();
+  void publishStopZonePolygon();
 
-  static void scaleTwist(geometry_msgs::msg::Twist & twist, double ratio);
-  static double elapsedSince(const rclcpp::Time & start_time, const rclcpp::Time & current_time);
-  static std::string stateToString(GateState state);
+  static std::vector<Point2D> parsePolygonPoints(const std::string & points_string);
+  static std::string stateToString(FilterState state);
 
-  double wait_duration_{3.0};
-  double clear_reset_duration_{1.0};
-  double cmd_timeout_{0.5};
-  double publish_rate_{20.0};
-  double slowdown_ratio_{0.3};
-  bool slowdown_enabled_{true};
-  std::set<std::string> target_polygons_;
-  std::set<std::string> slowdown_polygons_;
+  std::string cmd_vel_in_topic_{"/cmd_vel_raw"};
+  std::string cmd_vel_out_topic_{"/cmd_vel"};
+  std::string scan_in_topic_{"/scan_raw"};
+  std::string scan_out_topic_{"/scan"};
+  std::string empty_scan_mode_{"inf"};
+  std::string base_frame_id_{"base_link"};
+  std::string stop_zone_polygon_topic_{"/prestop/stop_zone_polygon"};
 
-  GateState state_{GateState::NORMAL};
-  rclcpp::Time state_enter_time_;
-  rclcpp::Time last_cmd_vel_raw_time_;
-  rclcpp::Time clear_since_;
+  double stop_duration_{3.0};
+  bool stop_zone_enabled_{true};
+  bool visualize_stop_zone_{true};
+  std::string stop_zone_action_type_{"stop"};
+  std::vector<Point2D> stop_zone_;
 
-  geometry_msgs::msg::Twist last_cmd_vel_raw_;
-  bool has_cmd_vel_raw_{false};
-  bool obstacle_detected_{false};
-  bool slowdown_detected_{false};
-  bool has_clear_since_{false};
+  FilterState state_{FilterState::CLEAR};
+  bool has_scan_{false};
+  bool waiting_for_clear_{false};
+  rclcpp::Time stop_start_time_;
 
-  rclcpp::Subscription<nav2_msgs::msg::CollisionDetectorState>::SharedPtr collision_state_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_raw_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PolygonStamped>::SharedPtr stop_zone_polygon_pub_;
+  rclcpp::TimerBase::SharedPtr polygon_timer_;
 };
 
 }  // namespace prestop

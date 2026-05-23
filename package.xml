@@ -3,16 +3,15 @@
 <package format="3">
   <name>prestop</name>
   <version>0.0.0</version>
-  <description>Stop briefly before allowing Nav2 avoidance behavior when Collision Detector reports an obstacle.</description>
+  <description>Safety filter that stops cmd_vel and forwards LaserScan obstacles inside a configured polygon.</description>
   <maintainer email="todo@example.com">takumi</maintainer>
   <license>TODO</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>geometry_msgs</depend>
-  <depend>nav2_msgs</depend>
   <depend>rclcpp</depend>
-  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

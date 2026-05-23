@@ -1,11 +1,18 @@
 prestop_node:
   ros__parameters:
-    wait_duration: 3.0
-    clear_reset_duration: 1.0
-    cmd_timeout: 0.5
-    publish_rate: 20.0
-    slowdown_enabled: true
-    slowdown_ratio: 0.3
-    # Omit target_polygons to stop on any CollisionDetectorState detection.
-    # To limit triggers, set a string array such as: ["front_stop", "front_slow"]
-    # Omit slowdown_polygons to reuse target_polygons for slowdown.
+    cmd_vel_in_topic: "/cmd_vel_raw"
+    cmd_vel_out_topic: "/cmd_vel"
+    scan_in_topic: "/low_scan_raw"
+    scan_out_topic: "/low_scan"
+
+    empty_scan_mode: "inf"
+    base_frame_id: "base_link"
+    visualize_stop_zone: true
+    stop_zone_polygon_topic: "/prestop/stop_zone_polygon"
+    stop_duration: 3.0
+
+    polygons:
+      stop_zone:
+        enabled: true
+        action_type: "stop"
+        points: "[[0.3, 0.4], [1.2, 0.4], [1.2, -0.4], [0.3, -0.4]]"
