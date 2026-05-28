@@ -51,6 +51,7 @@ private:
   std::string stop_zone_polygon_topic_{"/prestop/stop_zone_polygon"};
 
   double stop_duration_{3.0};
+  double min_obstacle_scan_duration_{0.0};
   bool stop_zone_enabled_{true};
   bool visualize_stop_zone_{true};
   std::string stop_zone_action_type_{"stop"};
@@ -59,7 +60,9 @@ private:
   FilterState state_{FilterState::CLEAR};
   bool has_scan_{false};
   bool waiting_for_clear_{false};
+  bool has_obstacle_scan_{false};
   rclcpp::Time stop_start_time_;
+  rclcpp::Time last_obstacle_scan_time_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;

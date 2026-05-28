@@ -26,6 +26,8 @@ PrestopNode::PrestopNode()
   stop_zone_polygon_topic_ =
     declare_parameter<std::string>("stop_zone_polygon_topic", "/prestop/stop_zone_polygon");
   stop_duration_ = declare_parameter<double>("stop_duration", 3.0);
+  min_obstacle_scan_duration_ =
+    declare_parameter<double>("min_obstacle_scan_duration", 0.0);
 
   stop_zone_enabled_ = declare_parameter<bool>("polygons.stop_zone.enabled", true);
   stop_zone_action_type_ =
@@ -46,6 +48,9 @@ PrestopNode::PrestopNode()
   }
   if (stop_duration_ < 0.0) {
     throw std::runtime_error("stop_duration must be non-negative");
+  }
+  if (min_obstacle_scan_duration_ < 0.0) {
+    throw std::runtime_error("min_obstacle_scan_duration must be non-negative");
   }
 
   cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_out_topic_, 10);
@@ -95,6 +100,11 @@ void PrestopNode::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   const bool obstacle_detected = stop_zone_enabled_ && scanHasObstacleInStopZone(*msg);
   const rclcpp::Time current_time = now();
 
+  if (obstacle_detected) {
+    has_obstacle_scan_ = true;
+    last_obstacle_scan_time_ = current_time;
+  }
+
   if (!obstacle_detected) {
     waiting_for_clear_ = false;
     state_ = FilterState::CLEAR;
@@ -118,7 +128,11 @@ void PrestopNode::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
       stateToString(state_).c_str());
   }
 
-  if (obstacle_detected) {
+  const bool keep_obstacle_scan = obstacle_detected ||
+    (has_obstacle_scan_ &&
+    (current_time - last_obstacle_scan_time_).seconds() < min_obstacle_scan_duration_);
+
+  if (keep_obstacle_scan) {
     scan_pub_->publish(*msg);
   } else {
     scan_pub_->publish(makeEmptyScan(*msg));
