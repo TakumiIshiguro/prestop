@@ -59,7 +59,7 @@ PrestopNode::PrestopNode()
   if (visualize_stop_zone_) {
     stop_zone_polygon_pub_ = create_publisher<geometry_msgs::msg::PolygonStamped>(
       stop_zone_polygon_topic_, rclcpp::QoS(1).transient_local());
-    polygon_timer_ = create_wall_timer(1s, std::bind(&PrestopNode::publishStopZonePolygon, this));
+    polygon_timer_ = create_wall_timer(100ms, std::bind(&PrestopNode::publishStopZonePolygon, this));
     publishStopZonePolygon();
   }
 
