@@ -9,9 +9,24 @@ prestop_node:
     base_frame_id: "base_link"
     visualize_stop_zone: true
     stop_zone_polygon_topic: "/prestop/stop_zone_polygon"
+    no_overtake_zone_polygon_topic: "/prestop/no_overtake_zone_polygon"
     stop_duration: 3.0
+    no_overtake_topic: "/no_overtake_active"
+    no_overtake_status_topic: "/prestop/no_overtake_active"
+    no_overtake_default: true
+    no_overtake_exit_delay: 1.0
+    clear_costmaps_before_no_overtake_exit: true
+    local_costmap_clear_service: "/local_costmap/clear_entirely_local_costmap"
+    global_costmap_clear_service: "/global_costmap/clear_entirely_global_costmap"
+    local_costmap_lifecycle_service: "/controller_server/get_state"
+    global_costmap_lifecycle_service: "/planner_server/get_state"
+    state_topic: "/prestop/state"
 
     polygons:
+      no_overtake_zone:
+        enabled: true
+        action_type: "no_overtake"
+        points: "[[0.3, 0.4], [1.2, 0.4], [1.2, -0.4], [0.3, -0.4]]"
       stop_zone:
         enabled: true
         action_type: "stop"
