@@ -47,6 +47,7 @@ protected:
       rclcpp::Parameter("state_topic", "/test/state"),
       rclcpp::Parameter("visualize_stop_zone", false),
       rclcpp::Parameter("stop_duration", 0.05),
+      rclcpp::Parameter("rearm_clear_duration", 0.1),
       rclcpp::Parameter("no_overtake_default", false),
       rclcpp::Parameter("no_overtake_exit_delay", 0.0),
       rclcpp::Parameter(
@@ -73,6 +74,14 @@ protected:
     state_sub_ = io_node_->create_subscription<std_msgs::msg::String>(
       "/test/state", rclcpp::QoS(10).transient_local().reliable(),
       [this](std_msgs::msg::String::ConstSharedPtr msg) {last_state_ = msg->data;});
+    scan_sub_ = io_node_->create_subscription<sensor_msgs::msg::LaserScan>(
+      "/test/scan_out", rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {
+        if (!msg->ranges.empty()) {
+          last_scan_range_ = msg->ranges.front();
+        }
+        ++scan_count_;
+      });
     no_overtake_status_sub_ = io_node_->create_subscription<std_msgs::msg::Bool>(
       "/test/no_overtake_status", rclcpp::QoS(10).transient_local().reliable(),
       [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
@@ -185,6 +194,7 @@ protected:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr no_overtake_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr no_overtake_status_sub_;
   rclcpp::Service<nav2_msgs::srv::ClearEntireCostmap>::SharedPtr local_costmap_clear_service_;
@@ -194,12 +204,14 @@ protected:
   std::string last_state_;
   bool no_overtake_status_{false};
   double last_cmd_x_{0.0};
+  float last_scan_range_{0.0F};
   size_t cmd_count_{0};
+  size_t scan_count_{0};
   size_t local_costmap_clear_count_{0};
   size_t global_costmap_clear_count_{0};
 };
 
-TEST_F(NoOvertakeTest, TimedStopReleasesOutsideNoOvertakeZone)
+TEST_F(NoOvertakeTest, TimedStopTransitionsToWaitingForRearm)
 {
   publishNoOvertake(false);
   publishObstacleScan();
@@ -207,12 +219,57 @@ TEST_F(NoOvertakeTest, TimedStopReleasesOutsideNoOvertakeZone)
 
   std::this_thread::sleep_for(70ms);
   publishObstacleScan();
-  EXPECT_EQ(last_state_, "CLEAR");
+  EXPECT_EQ(last_state_, "WAITING_FOR_REARM");
 
   const auto previous_count = cmd_count_;
   publishForwardCommand();
   ASSERT_GT(cmd_count_, previous_count);
   EXPECT_DOUBLE_EQ(last_cmd_x_, 0.5);
+}
+
+TEST_F(NoOvertakeTest, ObstacleFlickerDoesNotRetriggerTimedStop)
+{
+  publishNoOvertake(false);
+  publishObstacleScan();
+  std::this_thread::sleep_for(70ms);
+  publishObstacleScan();
+  ASSERT_EQ(last_state_, "WAITING_FOR_REARM");
+
+  publishObstacleScan(3.0F);
+  EXPECT_EQ(last_state_, "WAITING_FOR_REARM");
+  publishObstacleScan();
+  EXPECT_EQ(last_state_, "WAITING_FOR_REARM");
+}
+
+TEST_F(NoOvertakeTest, RearmsOnlyAfterContinuousClearDuration)
+{
+  publishNoOvertake(false);
+  publishObstacleScan();
+  std::this_thread::sleep_for(70ms);
+  publishObstacleScan();
+  ASSERT_EQ(last_state_, "WAITING_FOR_REARM");
+
+  publishObstacleScan(3.0F);
+  std::this_thread::sleep_for(120ms);
+  publishObstacleScan(3.0F);
+  EXPECT_EQ(last_state_, "CLEAR");
+
+  publishObstacleScan();
+  EXPECT_EQ(last_state_, "TIMED_STOP");
+}
+
+TEST_F(NoOvertakeTest, WaitingForRearmForwardsRawScan)
+{
+  publishNoOvertake(false);
+  publishObstacleScan();
+  std::this_thread::sleep_for(70ms);
+  publishObstacleScan();
+  ASSERT_EQ(last_state_, "WAITING_FOR_REARM");
+
+  const auto previous_count = scan_count_;
+  publishObstacleScan(3.0F);
+  ASSERT_GT(scan_count_, previous_count);
+  EXPECT_FLOAT_EQ(last_scan_range_, 3.0F);
 }
 
 TEST_F(NoOvertakeTest, StopIsHeldInsideNoOvertakeZone)
