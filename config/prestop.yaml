@@ -11,6 +11,7 @@ prestop_node:
     stop_zone_polygon_topic: "/prestop/stop_zone_polygon"
     no_overtake_zone_polygon_topic: "/prestop/no_overtake_zone_polygon"
     stop_duration: 3.0
+    rearm_clear_duration: 1.0
     no_overtake_topic: "/no_overtake_active"
     no_overtake_status_topic: "/prestop/no_overtake_active"
     no_overtake_default: true

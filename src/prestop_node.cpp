@@ -43,6 +43,7 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
   global_costmap_lifecycle_service_ = declare_parameter<std::string>(
     "global_costmap_lifecycle_service", "/planner_server/get_state");
   stop_duration_ = declare_parameter<double>("stop_duration", 3.0);
+  rearm_clear_duration_ = declare_parameter<double>("rearm_clear_duration", 1.0);
   min_obstacle_scan_duration_ =
     declare_parameter<double>("min_obstacle_scan_duration", 0.0);
   no_overtake_exit_delay_ = declare_parameter<double>("no_overtake_exit_delay", 1.0);
@@ -87,6 +88,9 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
   }
   if (stop_duration_ < 0.0) {
     throw std::runtime_error("stop_duration must be non-negative");
+  }
+  if (rearm_clear_duration_ < 0.0) {
+    throw std::runtime_error("rearm_clear_duration must be non-negative");
   }
   if (min_obstacle_scan_duration_ < 0.0) {
     throw std::runtime_error("min_obstacle_scan_duration must be non-negative");
@@ -150,7 +154,9 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
 
 void PrestopNode::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-  if (!has_scan_ || state_ != FilterState::CLEAR) {
+  const bool velocity_allowed = state_ == FilterState::CLEAR ||
+    state_ == FilterState::WAITING_FOR_REARM;
+  if (!has_scan_ || !velocity_allowed) {
     publishZeroCmdVel();
     return;
   }
@@ -177,21 +183,49 @@ void PrestopNode::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   }
 
   if (no_overtake_obstacle) {
-    waiting_for_clear_ = false;
+    rearm_clear_timer_active_ = false;
     state_ = FilterState::NO_OVERTAKE_HOLD;
-  } else if (!temporary_stop_obstacle) {
-    waiting_for_clear_ = false;
-    state_ = FilterState::CLEAR;
-  } else if (waiting_for_clear_) {
-    state_ = FilterState::CLEAR;
-  } else if (previous_state != FilterState::TIMED_STOP) {
-    stop_start_time_ = current_time;
-    state_ = FilterState::TIMED_STOP;
-  } else if ((current_time - stop_start_time_).seconds() >= stop_duration_) {
-    waiting_for_clear_ = true;
-    state_ = FilterState::CLEAR;
   } else {
-    state_ = FilterState::TIMED_STOP;
+    switch (previous_state) {
+      case FilterState::CLEAR:
+        if (temporary_stop_obstacle) {
+          stop_start_time_ = current_time;
+          rearm_clear_timer_active_ = false;
+          state_ = FilterState::TIMED_STOP;
+        }
+        break;
+
+      case FilterState::TIMED_STOP:
+        if ((current_time - stop_start_time_).seconds() >= stop_duration_) {
+          rearm_clear_timer_active_ = false;
+          state_ = FilterState::WAITING_FOR_REARM;
+        }
+        break;
+
+      case FilterState::WAITING_FOR_REARM:
+        if (temporary_stop_obstacle) {
+          rearm_clear_timer_active_ = false;
+        } else if (!rearm_clear_timer_active_) {
+          rearm_clear_start_time_ = current_time;
+          rearm_clear_timer_active_ = true;
+        } else if (
+          (current_time - rearm_clear_start_time_).seconds() >= rearm_clear_duration_)
+        {
+          rearm_clear_timer_active_ = false;
+          state_ = FilterState::CLEAR;
+        }
+        break;
+
+      case FilterState::NO_OVERTAKE_HOLD:
+        rearm_clear_timer_active_ = false;
+        if (temporary_stop_obstacle) {
+          stop_start_time_ = current_time;
+          state_ = FilterState::TIMED_STOP;
+        } else {
+          state_ = FilterState::CLEAR;
+        }
+        break;
+    }
   }
 
   if (state_ != previous_state) {
@@ -218,7 +252,10 @@ void PrestopNode::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
       "holding the robot until the obstacle clears");
   }
 
-  const bool keep_obstacle_scan = obstacle_detected ||
+  const bool force_raw_scan = state_ == FilterState::TIMED_STOP ||
+    state_ == FilterState::WAITING_FOR_REARM ||
+    state_ == FilterState::NO_OVERTAKE_HOLD;
+  const bool keep_obstacle_scan = force_raw_scan || obstacle_detected ||
     (has_obstacle_scan_ &&
     (current_time - last_obstacle_scan_time_).seconds() < min_obstacle_scan_duration_);
 
@@ -228,7 +265,7 @@ void PrestopNode::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     scan_pub_->publish(makeEmptyScan(*msg));
   }
 
-  if (state_ != FilterState::CLEAR) {
+  if (state_ == FilterState::TIMED_STOP || state_ == FilterState::NO_OVERTAKE_HOLD) {
     publishZeroCmdVel();
   }
 }
@@ -605,6 +642,8 @@ std::string PrestopNode::stateToString(const FilterState state)
       return "CLEAR";
     case FilterState::TIMED_STOP:
       return "TIMED_STOP";
+    case FilterState::WAITING_FOR_REARM:
+      return "WAITING_FOR_REARM";
     case FilterState::NO_OVERTAKE_HOLD:
       return "NO_OVERTAKE_HOLD";
   }

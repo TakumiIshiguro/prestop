@@ -27,6 +27,7 @@ enum class FilterState
 {
   CLEAR,
   TIMED_STOP,
+  WAITING_FOR_REARM,
   NO_OVERTAKE_HOLD
 };
 
@@ -91,6 +92,7 @@ private:
   std::string global_costmap_lifecycle_service_{"/planner_server/get_state"};
 
   double stop_duration_{3.0};
+  double rearm_clear_duration_{1.0};
   double min_obstacle_scan_duration_{0.0};
   double no_overtake_exit_delay_{1.0};
   bool stop_zone_enabled_{true};
@@ -113,9 +115,10 @@ private:
 
   FilterState state_{FilterState::CLEAR};
   bool has_scan_{false};
-  bool waiting_for_clear_{false};
+  bool rearm_clear_timer_active_{false};
   bool has_obstacle_scan_{false};
   rclcpp::Time stop_start_time_;
+  rclcpp::Time rearm_clear_start_time_;
   rclcpp::Time last_obstacle_scan_time_;
   rclcpp::Time no_overtake_clear_start_time_;
 
