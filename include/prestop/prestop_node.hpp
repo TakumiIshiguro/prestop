@@ -95,6 +95,7 @@ private:
   double rearm_clear_duration_{1.0};
   double min_obstacle_scan_duration_{0.0};
   double no_overtake_exit_delay_{1.0};
+  int min_points_in_polygon_{2};
   bool stop_zone_enabled_{true};
   bool no_overtake_zone_enabled_{true};
   bool visualize_stop_zone_{true};

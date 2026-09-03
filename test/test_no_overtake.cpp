@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -30,10 +31,14 @@ protected:
     rclcpp::shutdown();
   }
 
+  virtual std::vector<rclcpp::Parameter> extraParameterOverrides()
+  {
+    return {rclcpp::Parameter("noise_filter.min_points_in_polygon", 1)};
+  }
+
   void SetUp() override
   {
-    rclcpp::NodeOptions options;
-    options.parameter_overrides({
+    std::vector<rclcpp::Parameter> overrides{
       rclcpp::Parameter("cmd_vel_in_topic", "/test/cmd_vel_in"),
       rclcpp::Parameter("cmd_vel_out_topic", "/test/cmd_vel_out"),
       rclcpp::Parameter("scan_in_topic", "/test/scan_in"),
@@ -55,7 +60,14 @@ protected:
         "[[0.1, 0.5], [0.9, 0.5], [0.9, -0.5], [0.1, -0.5]]"),
       rclcpp::Parameter(
         "polygons.no_overtake_zone.points",
-        "[[1.1, 0.5], [2.0, 0.5], [2.0, -0.5], [1.1, -0.5]]")});
+        "[[1.1, 0.5], [2.0, 0.5], [2.0, -0.5], [1.1, -0.5]]")};
+
+    for (const auto & parameter : extraParameterOverrides()) {
+      overrides.push_back(parameter);
+    }
+
+    rclcpp::NodeOptions options;
+    options.parameter_overrides(overrides);
 
     prestop_node_ = std::make_shared<prestop::PrestopNode>(options);
     io_node_ = std::make_shared<rclcpp::Node>("prestop_test_io");
@@ -129,6 +141,21 @@ protected:
     scan.range_min = 0.1F;
     scan.range_max = 10.0F;
     scan.ranges = {range};
+    scan_pub_->publish(scan);
+    spinFor(30ms);
+  }
+
+  void publishObstacleScanPoints(const int num_points, const float range = 0.5F)
+  {
+    sensor_msgs::msg::LaserScan scan;
+    scan.header.stamp = io_node_->now();
+    scan.header.frame_id = "base_link";
+    scan.angle_increment = 0.02F;
+    scan.angle_min = -0.5F * static_cast<float>(num_points - 1) * scan.angle_increment;
+    scan.angle_max = -scan.angle_min;
+    scan.range_min = 0.1F;
+    scan.range_max = 10.0F;
+    scan.ranges.assign(static_cast<size_t>(std::max(num_points, 0)), range);
     scan_pub_->publish(scan);
     spinFor(30ms);
   }
@@ -340,4 +367,29 @@ TEST_F(NoOvertakeTest, KeepsNoOvertakeActiveWhileCostmapsAreInactive)
   EXPECT_EQ(local_costmap_clear_count_, 0U);
   EXPECT_EQ(global_costmap_clear_count_, 0U);
   EXPECT_TRUE(no_overtake_status_);
+}
+
+class NoiseFilterTest : public NoOvertakeTest
+{
+protected:
+  std::vector<rclcpp::Parameter> extraParameterOverrides() override
+  {
+    return {rclcpp::Parameter("noise_filter.min_points_in_polygon", 2)};
+  }
+};
+
+TEST_F(NoiseFilterTest, SingleNoisePointDoesNotTriggerTimedStop)
+{
+  publishNoOvertake(false);
+  publishObstacleScanPoints(1, 0.5F);
+
+  EXPECT_EQ(last_state_, "CLEAR");
+}
+
+TEST_F(NoiseFilterTest, EnoughPointsInPolygonTriggersTimedStop)
+{
+  publishNoOvertake(false);
+  publishObstacleScanPoints(2, 0.5F);
+
+  EXPECT_EQ(last_state_, "TIMED_STOP");
 }

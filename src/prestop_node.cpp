@@ -47,6 +47,8 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
   min_obstacle_scan_duration_ =
     declare_parameter<double>("min_obstacle_scan_duration", 0.0);
   no_overtake_exit_delay_ = declare_parameter<double>("no_overtake_exit_delay", 1.0);
+  min_points_in_polygon_ =
+    declare_parameter<int>("noise_filter.min_points_in_polygon", 2);
   no_overtake_input_ = declare_parameter<bool>("no_overtake_default", true);
   no_overtake_active_ = no_overtake_input_;
   clear_costmaps_before_no_overtake_exit_ =
@@ -98,6 +100,9 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
   if (no_overtake_exit_delay_ < 0.0) {
     throw std::runtime_error("no_overtake_exit_delay must be non-negative");
   }
+  if (min_points_in_polygon_ < 1) {
+    throw std::runtime_error("noise_filter.min_points_in_polygon must be at least 1");
+  }
 
   cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_out_topic_, 10);
   scan_pub_ = create_publisher<sensor_msgs::msg::LaserScan>(
@@ -142,14 +147,15 @@ PrestopNode::PrestopNode(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(
     get_logger(),
     "prestop_node started: cmd_vel %s -> %s, scan %s -> %s, no_overtake %s, "
-    "initial_state=%s, no_overtake_default=%s",
+    "initial_state=%s, no_overtake_default=%s, min_points_in_polygon=%d",
     cmd_vel_in_topic_.c_str(),
     cmd_vel_out_topic_.c_str(),
     scan_in_topic_.c_str(),
     scan_out_topic_.c_str(),
     no_overtake_topic_.c_str(),
     stateToString(state_).c_str(),
-    no_overtake_active_ ? "true" : "false");
+    no_overtake_active_ ? "true" : "false",
+    min_points_in_polygon_);
 }
 
 void PrestopNode::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -504,6 +510,7 @@ bool PrestopNode::scanHasObstacleInPolygon(
   const sensor_msgs::msg::LaserScan & scan,
   const std::vector<Point2D> & polygon) const
 {
+  int points_in_polygon = 0;
   for (size_t i = 0; i < scan.ranges.size(); ++i) {
     const float range = scan.ranges[i];
     if (!std::isfinite(range)) {
@@ -520,7 +527,9 @@ bool PrestopNode::scanHasObstacleInPolygon(
       static_cast<double>(range) * std::sin(angle)};
 
     if (pointInPolygon(point, polygon)) {
-      return true;
+      if (++points_in_polygon >= min_points_in_polygon_) {
+        return true;
+      }
     }
   }
   return false;
